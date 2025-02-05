@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Codeforces Training Analysis</title>
+    <link rel="icon" href="https://api.iconify.design/emojione:cat-face.svg" type="image/svg+xml">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body class="min-h-screen">
+    <div class="main-content p-8">
+        <div class="max-w-6xl mx-auto">
+            <!-- Header with Logo and GitHub Widget -->
+            <div class="flex justify-between items-start mb-8">
+                <div class="flex items-center">
+                    <div class="logo-container">
+                        <img src="https://sun9-56.userapi.com/impg/z93KrjRcU2ykq_ReC2dazsiYkZ-LtJ7vnUpwwA/2JETTZThiiQ.jpg?size=1024x1024&quality=95&sign=27bb2a8cd8f3e3f4f0e57280c7dec1c5&type=album" alt="Coding Cat" class="w-12 h-12 object-contain rounded-lg">
+                    </div>
+                    <div class="text-left ml-4">
+                        <h1 class="text-4xl font-bold text-gray-800 mb-4">Codeforces Training Analysis</h1>
+                        <p class="text-gray-600">Get personalized insights and training recommendations</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="https://github.com/silvermete0r/codeforces-training-plan" 
+                       class="github-button flex items-center space-x-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"></path>
+                        </svg>
+                        <span>Star</span>
+                        <span id="starCount" class="bg-gray-700 px-2 py-1 rounded-md text-xs">★ 0</span>
+                    </a>
+                    <!-- <div class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                        PH Badge :)
+                    </div> -->
+                </div>
+            </div>
+
+            <!-- Interactive Search Form -->
+            <div class="stats-card rounded-xl p-6 mb-8">
+                <form id="usernameForm" class="flex gap-4 mb-4">
+                    <div class="handle-input-wrapper flex-1">
+                        <input type="text" id="username" 
+                               class="w-full px-4 py-2 rounded-lg border focus:ring-2 focus:ring-blue-500"
+                               placeholder="Enter Codeforces Handle"
+                               required>
+                        <div class="handle-suggestion">
+                            Try handles like: tourist, 998batrr, or Benq 🚀
+                        </div>
+                    </div>
+                    <button type="submit" 
+                            class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                        Analyze
+                    </button>
+                </form>
+
+                <!-- Users Grid -->
+                <div class="flex flex-wrap justify-center overflow-x-auto gap-2 mt-4 -mx-2 px-2">
+                    <button data-handle="tourist" class="user-badge shrink-0">👑 tourist</button>
+                    <button data-handle="jiangly" class="user-badge shrink-0">🥇 jiangly</button>
+                    <button data-handle="Benq" class="user-badge shrink-0">🐄 Benq</button>
+                    <button data-handle="Um_nik" class="user-badge shrink-0">🔬 Um_nik</button>
+                    <button data-handle="998batrr" class="user-badge shrink-0">🏆 998batrr</button>
+                    <button data-handle="ksun48" class="user-badge shrink-0">💫 ksun48</button>
+                    <button data-handle="Temirlan" class="user-badge shrink-0">🎯 Temirlan</button>
+                    <button data-handle="sstrong" class="user-badge shrink-0">💪 sstrong</button>
+                    <button data-handle="Wansur" class="user-badge shrink-0">🐱‍💻 Wansur</button>
+                </div>
+            </div>
+
+            <!-- New Loading Animation -->
+            <div id="loadingContainer" class="hidden">
+                <div class="loading-container">
+                    <div class="loading-bar"></div>
+                </div>
+                <p class="text-center text-gray-600 mt-2">Analyzing profile data...</p>
+            </div>
+
+            <!-- Enhanced Results Container -->
+            <div id="results" class="hidden space-y-8">
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="stats-card rounded-xl p-4">
+                        <h4 class="text-sm text-gray-500">Total Solved</h4>
+                        <div id="totalSolved" class="text-2xl font-bold"></div>
+                    </div>
+                    <div class="stats-card rounded-xl p-4">
+                        <h4 class="text-sm text-gray-500">Problems Solved (Last 3 Months)</h4>
+                        <div id="monthSolved" class="text-2xl font-bold"></div>
+                    </div>
+                    <div class="stats-card rounded-xl p-4">
+                        <h4 class="text-sm text-gray-500">Average Attempts</h4>
+                        <div id="avgAttempts" class="text-2xl font-bold"></div>
+                    </div>
+                    <div class="stats-card rounded-xl p-4">
+                        <h4 class="text-sm text-gray-500">Success Rate</h4>
+                        <div id="successRate" class="text-2xl font-bold"></div>
+                    </div>
+                </div>
+
+                <!-- User Profile and Charts -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="stats-card rounded-xl p-6">
+                        <h3 class="text-lg font-semibold mb-4">Profile Overview</h3>
+                        <div id="userProfile"></div>
+                        <!-- Add user status inside profile card -->
+                        <div id="userStatus" class="mt-4"></div>
+                    </div>
+                    <div class="stats-card rounded-xl p-6 md:col-span-2">
+                        <h3 class="text-lg font-semibold mb-4">Monthly Activity</h3>
+                        <div class="chart-container">
+                            <canvas id="activityChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Topics Analysis -->
+                <div class="stats-card rounded-xl p-6">
+                    <h3 class="text-lg font-semibold mb-4">Topics Performance</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                        <div class="radar-container">
+                            <canvas id="topicsChart"></canvas>
+                        </div>
+                        <div id="recommendations" class="space-y-4 h-full"></div>
+                    </div>
+                </div>
+
+                <!-- Training Path with JSON Download -->
+                <div class="stats-card rounded-xl p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold">Recommended Training Path</h3>
+                        <button onclick="downloadTrainingJSON()" 
+                                class="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                            <span>Download JSON</span>
+                        </button>
+                    </div>
+                    <div id="trainingPath" class="space-y-4"></div>
+                </div>
+            </div>
+
+            <!-- Error Message -->
+            <div id="error" class="hidden bg-red-100 border border-red-400 text-red-700 px-6 py-4 rounded-lg mt-4">
+                <span class="block"></span>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p>Created with ♥ by <a href="https://github.com/silvermete0r" class="text-blue-600 hover:underline">@silvermete0r</a></p>
+        <p class="text-sm mt-2 text-gray-500">Powered by AI: Claude 3.5 Sonnet, ChatGPT & Google Gemini</p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.2/html2pdf.bundle.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
