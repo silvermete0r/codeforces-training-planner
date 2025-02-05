@@ -13,10 +13,12 @@ import hashlib
 import time
 
 # Initialize Flask app with static folder configuration
-app = Flask(__name__, 
-    static_folder='static',
-    static_url_path='/static'
-)
+app = Flask(__name__)
+
+# Serve static files through Flask routes
+@app.route('/static/<path:path>')
+def send_static(path):
+    return send_from_directory('static', path)
 
 # Load environment variables
 load_dotenv()
