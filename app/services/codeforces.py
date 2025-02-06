@@ -14,7 +14,7 @@ class CodeforcesService:
             
         return {
             'user_info': user_info['result'][0],
-            'submissions': submissions['result'][:100]
+            'submissions': submissions['result'][:3000]
         }
 
     @staticmethod
@@ -26,3 +26,31 @@ class CodeforcesService:
             
         return [p for p in response['result']['problems']
                 if 'rating' in p and min_rating <= p['rating'] <= max_rating]
+    
+    @staticmethod
+    def get_difficulty_level(rating):
+        if rating < 1200:
+            return 'easy'
+        elif rating < 1900:
+            return 'medium'
+        else:
+            return 'hard'
+
+    @staticmethod
+    def analyze_submissions(submissions):
+        topics = {}
+        for sub in submissions:
+            try:
+                if 'problem' in sub and 'tags' in sub['problem']:
+                    for tag in sub['problem']['tags']:
+                        if tag not in topics:
+                            topics[tag] = {'solved': 0, 'attempted': 0}
+                        if sub['verdict'] == 'OK':
+                            topics[tag]['solved'] += 1
+                        else:
+                            topics[tag]['attempted'] += 1
+            except Exception as e:
+                print(f"Error processing submission tags: {e}")
+                continue
+        
+        return topics

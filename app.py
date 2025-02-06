@@ -6,36 +6,39 @@ import requests
 import google.generativeai as genai
 from datetime import datetime, timedelta
 import os
-from dotenv import load_dotenv
 from collections import defaultdict
 from functools import wraps
 import hashlib
 import time
 
+from app.services.analyzer import SubmissionAnalyzer
+from app.services.codeforces import CodeforcesService
+from app.config import Config
+
 # Initialize Flask app with static folder configuration
 app = Flask(__name__)
+
+# Load configuration
+app.config.from_object(Config)
+
+# Initialize cache properly
+cache = Cache(config={
+    'CACHE_TYPE': Config.CACHE_TYPE,
+    'CACHE_DEFAULT_TIMEOUT': Config.CACHE_DEFAULT_TIMEOUT
+})
+cache.init_app(app)
 
 # Serve static files through Flask routes
 @app.route('/static/<path:path>')
 def send_static(path):
     return send_from_directory('static', path)
 
-# Load environment variables
-load_dotenv()
-
-# Configure caching for Vercel
-cache = Cache(config={
-    'CACHE_TYPE': 'SimpleCache',  # Changed to SimpleCache for Vercel
-    'CACHE_DEFAULT_TIMEOUT': 3600
-})
-cache.init_app(app)
-
 # Configure rate limiting for Vercel
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["30 per hour"],
-    storage_uri="memory://"
+    default_limits=[Config.RATELIMIT_DEFAULT],
+    storage_uri=Config.RATELIMIT_STORAGE_URL
 )
 
 # CORS headers for Vercel
@@ -57,84 +60,8 @@ def security_headers(response):
 app.after_request(security_headers)
 
 # Configure Google Gemini AI
-genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+genai.configure(api_key=Config.GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
-
-def get_codeforces_data(username):
-    # Fetch user info
-    user_info = requests.get(f'https://codeforces.com/api/user.info?handles={username}').json()
-    
-    # Fetch user submissions
-    submissions = requests.get(f'https://codeforces.com/api/user.status?handle={username}').json()
-    
-    if user_info['status'] != 'OK' or submissions['status'] != 'OK':
-        return None
-    
-    return {
-        'user_info': user_info['result'][0],
-        'submissions': submissions['result'][:100]  # Last 100 submissions
-    }
-
-def analyze_submissions(submissions):
-    topics = {}
-    for sub in submissions:
-        try:
-            if 'problem' in sub and 'tags' in sub['problem']:
-                for tag in sub['problem']['tags']:
-                    if tag not in topics:
-                        topics[tag] = {'solved': 0, 'attempted': 0}
-                    if sub['verdict'] == 'OK':
-                        topics[tag]['solved'] += 1
-                    else:
-                        topics[tag]['attempted'] += 1
-        except Exception as e:
-            print(f"Error processing submission tags: {e}")
-            continue
-    
-    return topics
-
-def analyze_monthly_activity(submissions):
-    today = datetime.today()
-    start_date = today - timedelta(days=90)  # Changed to 90 days (3 months)
-    
-    daily_counts = defaultdict(int)
-    filtered_submissions = [
-        sub for sub in submissions 
-        if datetime.fromtimestamp(sub['creationTimeSeconds']) >= start_date
-    ]
-    
-    for sub in filtered_submissions:
-        sub_date = datetime.fromtimestamp(sub['creationTimeSeconds'])
-        if sub['verdict'] == 'OK':
-            daily_counts[sub_date.strftime('%Y-%m-%d')] += 1
-    
-    dates = [(start_date + timedelta(days=x)).strftime('%Y-%m-%d') 
-             for x in range(91)]  # Changed to 91 days
-    values = [daily_counts.get(date, 0) for date in dates]
-    
-    return {
-        'labels': dates,
-        'values': values,
-        'total_solved': sum(values)
-    }
-
-def generate_recommendations(topics):
-    weak_topics = []
-    for topic, stats in topics.items():
-        success_rate = stats['solved'] / (stats['solved'] + stats['attempted']) if stats['solved'] + stats['attempted'] > 0 else 0
-        if success_rate < 0.5:
-            weak_topics.append((topic, success_rate))
-    
-    weak_topics.sort(key=lambda x: x[1])
-    recommendations = []
-    
-    if weak_topics:
-        recommendations.extend([
-            f"Focus on {topic} problems (current success rate: {rate*100:.1f}%)"
-            for topic, rate in weak_topics[:3]
-        ])
-    
-    return recommendations
 
 def generate_roadmap(user_data, topics):
     prompt = f"""
@@ -156,17 +83,20 @@ def generate_roadmap(user_data, topics):
     
     Present your response with clear formatting, using numbered steps and bullet points where appropriate.
     """
-    
-    response = model.generate_content(prompt)
-    final_response = response.text.strip()
-    print("Generated roadmap:", final_response)  # Debug output
-    return final_response
+    try:
+        response = model.generate_content(prompt)
+        final_response = response.text.strip()
+        print("Generated roadmap:", final_response)  # Debug output
+        return final_response
+    except Exception as e:
+        print(f"Error generating roadmap: {e}")
+        return "An error occurred while generating a personalized study plan. Please try again later."
 
 def calculate_statistics(submissions):
     today = datetime.today()
-    start_date = today - timedelta(days=90)  # Changed to 90 days
+    start_date = today - timedelta(days=90)
     
-    # Filter submissions for the last 30 days
+    # Filter submissions for the last 90 days
     monthly_submissions = [
         s for s in submissions 
         if datetime.fromtimestamp(s['creationTimeSeconds']) >= start_date
@@ -200,51 +130,6 @@ def calculate_statistics(submissions):
     print(response)
 
     return response
-
-def get_difficulty_level(rating):
-    if rating < 1200:
-        return 'easy'
-    elif rating < 1900:
-        return 'medium'
-    else:
-        return 'hard'
-
-def get_problem_suggestions(topic, user_rating, count=3):
-    try:
-        difficulty = get_difficulty_level(user_rating)
-        rating_ranges = {
-            'easy': (800, 1200),
-            'medium': (1200, 1900),
-            'hard': (1900, 3500)
-        }
-        min_rating, max_rating = rating_ranges[difficulty]
-
-        problems = cache.get(f'problems_{topic}_{min_rating}_{max_rating}')
-        if not problems:
-            response = requests.get('https://codeforces.com/api/problemset.problems').json()
-            if response['status'] == 'OK':
-                problems = [p for p in response['result']['problems']
-                          if 'rating' in p and min_rating <= p['rating'] <= max_rating]
-                cache.set(f'problems_{topic}_{min_rating}_{max_rating}', problems, timeout=3600)
-            else:
-                problems = []
-
-        suggested = []
-        for problem in problems:
-            if ('tags' in problem and topic.lower() in [t.lower() for t in problem.get('tags', [])]):
-                suggested.append({
-                    'platform': 'Codeforces',
-                    'name': problem.get('name', 'Unnamed'),
-                    'difficulty': problem.get('rating', 'Unknown'),
-                    'url': f"https://codeforces.com/problemset/problem/{problem.get('contestId')}/{problem.get('index')}"
-                })
-            if len(suggested) >= count:
-                break
-        
-        return suggested
-    except Exception as e:
-        print(f"Error fetching problems: {e}")
-        return []
 
 def get_cp_resources(topic):
     """Get competitive programming resources for a topic"""
@@ -296,6 +181,43 @@ def get_cp_resources(topic):
     
     return resources.get(topic.lower(), default_resources)
 
+def get_problem_suggestions(topic, user_rating, count=3):
+    try:
+        difficulty = CodeforcesService.get_difficulty_level(user_rating)
+        rating_ranges = {
+            'easy': (800, 1200),
+            'medium': (1200, 1900),
+            'hard': (1900, 3500)
+        }
+        min_rating, max_rating = rating_ranges[difficulty]
+
+        problems = cache.get(f'problems_{topic}_{min_rating}_{max_rating}')
+        if not problems:
+            response = requests.get('https://codeforces.com/api/problemset.problems').json()
+            if response['status'] == 'OK':
+                problems = [p for p in response['result']['problems']
+                          if 'rating' in p and min_rating <= p['rating'] <= max_rating]
+                cache.set(f'problems_{topic}_{min_rating}_{max_rating}', problems, timeout=3600)
+            else:
+                problems = []
+
+        suggested = []
+        for problem in problems:
+            if ('tags' in problem and topic.lower() in [t.lower() for t in problem.get('tags', [])]):
+                suggested.append({
+                    'platform': 'Codeforces',
+                    'name': problem.get('name', 'Unnamed'),
+                    'difficulty': problem.get('rating', 'Unknown'),
+                    'url': f"https://codeforces.com/problemset/problem/{problem.get('contestId')}/{problem.get('index')}"
+                })
+            if len(suggested) >= count:
+                break
+        
+        return suggested
+    except Exception as e:
+        print(f"Error fetching problems: {e}")
+        return []
+
 def generate_training_path(topics, user_rating):
     # Sort topics by success rate and complexity
     topic_difficulties = {
@@ -328,7 +250,7 @@ def generate_training_path(topics, user_rating):
         
         path.append({
             'topic': topic,
-            'difficulty': get_difficulty_level(user_rating),
+            'difficulty': CodeforcesService.get_difficulty_level(user_rating),
             'success_rate': f"{rate*100:.1f}%",
             'recommended_problems': suggested_problems,
             'description': f"Master {topic} fundamentals through carefully selected problems",
@@ -366,24 +288,22 @@ def analyze():
         return jsonify({'error': 'Username is required'}), 400
     
     try:
-        # Generate cache key based on username and timestamp (1-hour granularity)
         cache_key = f"user_analysis_{username}_{int(time.time() // 3600)}"
         
-        # Try to get cached results
         cached_result = cache.get(cache_key)
-        if cached_result:
+        if (cached_result):
             return jsonify(cached_result)
         
-        cf_data = get_codeforces_data(username)
+        cf_data = CodeforcesService.get_user_data(username)
         if not cf_data:
             return jsonify({'error': 'Invalid Codeforces username'}), 400
         
         user_rating = cf_data['user_info'].get('rating', 0)
-        topics = analyze_submissions(cf_data['submissions'])
-        monthly_activity = analyze_monthly_activity(cf_data['submissions'])
+        topics = SubmissionAnalyzer.analyze_submissions(cf_data['submissions'])
+        monthly_activity = SubmissionAnalyzer.analyze_monthly_activity(cf_data['submissions'])
         statistics = calculate_statistics(cf_data['submissions'])
         training_path = generate_training_path(topics, user_rating)
-        recommendations = generate_recommendations(topics)
+        recommendations = SubmissionAnalyzer.generate_recommendations(topics)
         
         result = {
             'user_info': cf_data['user_info'],

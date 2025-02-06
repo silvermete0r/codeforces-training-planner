@@ -135,6 +135,9 @@ async function analyzeUser(username) {
             }
         });
 
+        // Dynamically set the radar chart container height to make the graph bigger.
+        document.getElementById('topicsChart').parentNode.style.height = '600px';
+
         // Render topics performance chart
         topicsChart = new Chart(document.getElementById('topicsChart'), {
             type: 'radar',
@@ -153,7 +156,7 @@ async function analyzeUser(username) {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: true,
+                maintainAspectRatio: false, // Changed to allow bigger chart
                 scales: {
                     r: {
                         beginAtZero: true,
@@ -169,6 +172,19 @@ async function analyzeUser(username) {
                 }
             }
         });
+
+        // Show recommendations under the radar chart
+        const recommendations = document.getElementById('recommendations');
+        if (recommendations) {
+            recommendations.innerHTML = data.recommendations.map(rec => `
+                <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
+                    <div class="flex items-center gap-3">
+                        <span class="text-2xl">📊</span>
+                        <p class="text-gray-800">${rec}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
 
         // Render training path with improved visualization
         const trainingPath = document.getElementById('trainingPath');
@@ -248,26 +264,6 @@ async function analyzeUser(username) {
                     </div>
                 </div>
             `).join('');
-        }
-
-        // Show recommendations with error handling
-        const recommendations = document.getElementById('recommendations');
-        if (recommendations) {
-            if (data.recommendations && data.recommendations.length > 0) {
-                recommendations.innerHTML = `
-                    <h4 class="font-medium">Recommended Focus Areas</h4>
-                    <ul class="list-disc pl-5 space-y-2">
-                        ${data.recommendations.map(rec => `
-                            <li class="text-gray-700">${rec}</li>
-                        `).join('')}
-                    </ul>
-                `;
-            } else {
-                recommendations.innerHTML = `
-                    <h4 class="font-medium">Recommendations</h4>
-                    <p class="text-gray-600">Keep solving problems to get personalized recommendations.</p>
-                `;
-            }
         }
 
         results.classList.remove('hidden');

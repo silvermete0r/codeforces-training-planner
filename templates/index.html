@@ -119,11 +119,16 @@
                 <!-- Topics Analysis -->
                 <div class="stats-card rounded-xl p-6">
                     <h3 class="text-lg font-semibold mb-4">Topics Performance</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                        <div class="radar-container">
+                    <div class="flex flex-col gap-6">
+                        <!-- Radar Chart Container -->
+                        <div class="radar-container" style="height: 600px;">
                             <canvas id="topicsChart"></canvas>
                         </div>
-                        <div id="recommendations" class="space-y-4 h-full"></div>
+                        <!-- Recommendations Container -->
+                        <div class="recommendations-container">
+                            <h4 class="text-md font-semibold mb-3">Recommended Focus Areas</h4>
+                            <div id="recommendations" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+                        </div>
                     </div>
                 </div>
 

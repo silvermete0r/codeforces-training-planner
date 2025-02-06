@@ -343,6 +343,21 @@ body {
     margin: 0 auto;
 }
 
+.radar-container {
+    width: 100%;
+    min-height: 600px;
+    margin: 0 auto;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 1rem;
+}
+
+.recommendations-container {
+    margin-top: 2rem;
+    padding-top: 2rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
 /* Remove old roadmap styling */
 .roadmap-path::before,
 .roadmap-step::before {
