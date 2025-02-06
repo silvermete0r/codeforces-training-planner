@@ -10,36 +10,139 @@ from collections import defaultdict
 from functools import wraps
 import hashlib
 import time
+from dotenv import load_dotenv
 
-from app.services.analyzer import SubmissionAnalyzer
-from app.services.codeforces import CodeforcesService
-from app.config import Config
+# Load environment variables
+load_dotenv()
 
-# Initialize Flask app with static folder configuration
+# Initialize Flask app
 app = Flask(__name__)
 
-# Load configuration
+# Configuration
+class Config:
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+    CACHE_TYPE = 'SimpleCache'
+    CACHE_DEFAULT_TIMEOUT = 3600
+    RATELIMIT_DEFAULT = "30 per hour"
+    RATELIMIT_STORAGE_URL = "memory://"
+
 app.config.from_object(Config)
 
-# Initialize cache properly
+# Initialize extensions
 cache = Cache(config={
     'CACHE_TYPE': Config.CACHE_TYPE,
     'CACHE_DEFAULT_TIMEOUT': Config.CACHE_DEFAULT_TIMEOUT
 })
 cache.init_app(app)
 
-# Serve static files through Flask routes
-@app.route('/static/<path:path>')
-def send_static(path):
-    return send_from_directory('static', path)
-
-# Configure rate limiting for Vercel
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
     default_limits=[Config.RATELIMIT_DEFAULT],
     storage_uri=Config.RATELIMIT_STORAGE_URL
 )
+
+# Service classes
+class CodeforcesService:
+    @staticmethod
+    def get_user_data(username):
+        user_info = requests.get(f'https://codeforces.com/api/user.info?handles={username}').json()
+        submissions = requests.get(f'https://codeforces.com/api/user.status?handle={username}').json()
+        
+        if user_info['status'] != 'OK' or submissions['status'] != 'OK':
+            return None
+            
+        return {
+            'user_info': user_info['result'][0],
+            'submissions': submissions['result'][:3000]
+        }
+
+    @staticmethod
+    def get_difficulty_level(rating):
+        if rating < 1200:
+            return 'easy'
+        elif rating < 1900:
+            return 'medium'
+        else:
+            return 'hard'
+
+class SubmissionAnalyzer:
+    @staticmethod
+    def analyze_submissions(submissions):
+        topics = {}
+        for sub in submissions:
+            try:
+                if 'problem' in sub and 'tags' in sub['problem']:
+                    for tag in sub['problem']['tags']:
+                        if tag not in topics:
+                            topics[tag] = {'solved': 0, 'attempted': 0}
+                        if sub['verdict'] == 'OK':
+                            topics[tag]['solved'] += 1
+                        else:
+                            topics[tag]['attempted'] += 1
+            except Exception as e:
+                print(f"Error processing submission tags: {e}")
+                continue
+        
+        return topics
+
+    @staticmethod
+    def analyze_monthly_activity(submissions):
+        today = datetime.today()
+        start_date = today - timedelta(days=90)
+        
+        daily_counts = defaultdict(int)
+        filtered_submissions = [
+            sub for sub in submissions 
+            if datetime.fromtimestamp(sub['creationTimeSeconds']) >= start_date
+        ]
+        
+        for sub in filtered_submissions:
+            sub_date = datetime.fromtimestamp(sub['creationTimeSeconds'])
+            if sub['verdict'] == 'OK':
+                daily_counts[sub_date.strftime('%Y-%m-%d')] += 1
+        
+        dates = [(start_date + timedelta(days=x)).strftime('%Y-%m-%d') 
+                for x in range(91)]
+        values = [daily_counts.get(date, 0) for date in dates]
+        
+        return {
+            'labels': dates,
+            'values': values,
+            'total_solved': sum(values)
+        }
+
+    @staticmethod
+    def generate_recommendations(topics):
+        weak_topics = []
+        for topic, stats in topics.items():
+            success_rate = stats['solved'] / (stats['solved'] + stats['attempted']) if stats['solved'] + stats['attempted'] > 0 else 0
+            if success_rate < 0.5:
+                weak_topics.append((topic, success_rate))
+        
+        weak_topics.sort(key=lambda x: x[1])
+        recommendations = []
+        
+        if weak_topics:
+            recommendations.extend([
+                f"Focus on {topic} problems (current success rate: {rate*100:.1f}%)"
+                for topic, rate in weak_topics[:5]
+            ])
+        
+        return recommendations
+
+# Initialize services
+codeforces_service = CodeforcesService()
+submission_analyzer = SubmissionAnalyzer()
+
+# Configure Google Gemini AI
+genai.configure(api_key=Config.GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Serve static files through Flask routes
+@app.route('/static/<path:path>')
+def send_static(path):
+    return send_from_directory('static', path)
 
 # CORS headers for Vercel
 @app.after_request
@@ -58,10 +161,6 @@ def security_headers(response):
     return response
 
 app.after_request(security_headers)
-
-# Configure Google Gemini AI
-genai.configure(api_key=Config.GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
 
 def generate_roadmap(user_data, topics):
     prompt = f"""

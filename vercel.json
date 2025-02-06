@@ -4,12 +4,31 @@
         {
             "src": "app.py",
             "use": "@vercel/python"
+        },
+        {
+            "src": "static/**",
+            "use": "@vercel/static"
         }
     ],
     "routes": [
         {
+            "src": "/static/(.*)",
+            "dest": "/static/$1",
+            "headers": {
+                "cache-control": "public, max-age=31536000, immutable"
+            }
+        },
+        {
+            "src": "/(.*\\.(ico|png|jpg|jpeg|css|js))",
+            "dest": "/static/$1"
+        },
+        {
             "src": "/(.*)",
             "dest": "app.py"
         }
-    ]
+    ],
+    "env": {
+        "PYTHONPATH": ".",
+        "FLASK_ENV": "production"
+    }
 }
