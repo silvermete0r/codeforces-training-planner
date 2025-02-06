@@ -42,6 +42,14 @@ An AI-powered tool that analyzes your Codeforces profile and generates personali
 - Add or update tests.
 - Submit a pull request.
 
+## Contributing Issues
+
+If you encounter any issues or have suggestions for improvements, please check the [Issues](https://github.com/silvermete0r/codeforces-training-planner/issues) section of the repository. You can contribute by:
+
+- Reporting bugs
+- Requesting features
+- Discussing potential improvements
+
 ## Running Tests
 
 To run the tests, use the following command:
