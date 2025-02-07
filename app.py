@@ -17,6 +17,7 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.urandom(24)
 
 # Configuration
 class Config:
@@ -116,6 +117,8 @@ class SubmissionAnalyzer:
     def generate_recommendations(topics):
         weak_topics = []
         for topic, stats in topics.items():
+            if topic.lower() == 'special problems':
+                continue
             success_rate = stats['solved'] / (stats['solved'] + stats['attempted']) if stats['solved'] + stats['attempted'] > 0 else 0
             if success_rate < 0.5:
                 weak_topics.append((topic, success_rate))
@@ -128,6 +131,8 @@ class SubmissionAnalyzer:
                 f"Focus on {topic} problems (current success rate: {rate*100:.1f}%)"
                 for topic, rate in weak_topics[:5]
             ])
+        else:
+            recommendations.append("Great job! You're doing well across all topics.")
         
         return recommendations
 
@@ -142,6 +147,9 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 # Serve static files through Flask routes
 @app.route('/static/<path:path>')
 def send_static(path):
+    # Obfuscate JavaScript files
+    if path.endswith('.js'):
+        return send_from_directory('static', path, mimetype='text/plain')
     return send_from_directory('static', path)
 
 # CORS headers for Vercel
@@ -335,6 +343,8 @@ def generate_training_path(topics, user_rating):
     
     weighted_topics = []
     for topic, stats in topics.items():
+        if topic.lower() == 'special problems':
+            continue
         success_rate = stats['solved'] / (stats['solved'] + stats['attempted']) if stats['solved'] + stats['attempted'] > 0 else 0
         topic_difficulty = topic_difficulties.get(topic.lower(), 3)
         weighted_topics.append((topic, success_rate, topic_difficulty))
@@ -420,6 +430,16 @@ def analyze():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# Security headers middleware
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=()'
+    return response
 
 # Required for Vercel
 if __name__ == '__main__':
