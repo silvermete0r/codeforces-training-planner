@@ -55,13 +55,13 @@ If you encounter any issues or have suggestions for improvements, please check t
 To run the tests, use the following command:
 
 ```bash
-pytest
+pytest test/test_app.py -v
 ```
 
 Make sure you have `pytest` installed:
 
 ```bash
-pip install pytest
+pip install -r requirements-test.txt
 ```
 
 ## License
