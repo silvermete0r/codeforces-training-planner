@@ -314,48 +314,32 @@
     }
 
     function downloadTrainingJSON() {
-        const trainingPath = elements.trainingPath;
-        if (!trainingPath) return;
-
-        const username = elements.usernameInput.value;
-        const trainingPlan = {
-            username: username,
-            generated_at: new Date().toISOString(),
-            training_path: Array.from(trainingPath.children).map(card => {
-                const topic = card.querySelector('h4').textContent;
-                const description = card.querySelector('p').textContent;
-                const difficulty = card.querySelector('.rounded-full').textContent;
-                const successRate = card.querySelector('.progress-bar-fill').style.width;
-                const problems = Array.from(card.querySelectorAll('.problem-card')).map(problem => ({
-                    name: problem.querySelector('.font-medium').textContent,
-                    difficulty: problem.querySelector('.text-sm').textContent.replace('Difficulty: ', ''),
-                    url: problem.href
-                }));
-                const resources = Array.from(card.querySelectorAll('.resource-card')).map(resource => ({
-                    name: resource.querySelector('.font-medium').textContent,
-                    url: resource.href
-                }));
-                return {
-                    topic,
-                    description,
-                    difficulty,
-                    success_rate: successRate,
-                    recommended_problems: problems,
-                    learning_resources: resources
-                };
+        const username = elements.usernameInput.value.trim();
+        if (!username) {
+            ui.showError("Please enter a username before downloading.");
+            return;
+        }
+        fetch(`/download?username=${encodeURIComponent(username)}`)
+            .then(response => {
+                if (!response.ok) throw new Error("Failed to download JSON");
+                return response.blob();
             })
-        };
-        const jsonString = JSON.stringify(trainingPlan, null, 2);
-        const blob = new Blob([jsonString], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `codeforces_training_plan_${username}.json`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+            .then(blob => {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `codeforces_training_plan_${username}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            })
+            .catch(error => {
+                ui.showError(error.message);
+            });
     }
+
+    window.downloadTrainingJSON = downloadTrainingJSON;
 
     const init = () => {
         eventListeners.setupFormSubmit();

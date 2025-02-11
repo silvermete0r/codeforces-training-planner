@@ -181,7 +181,7 @@ def test_report_setup(request):
 
 if __name__ == '__main__':
     pytest.main([
-        '--html=report/report.html',
+        '--html=.report/report.html',
         '--self-contained-html',
         '--capture=tee-sys',
         __file__

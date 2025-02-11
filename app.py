@@ -1,36 +1,23 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, make_response
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_caching import Cache
-import requests
+import requests, time, os, hashlib
 import google.generativeai as genai
 from datetime import datetime, timedelta
-import os
 from collections import defaultdict
-from functools import wraps
-import hashlib
-import time
 from dotenv import load_dotenv
-import random  # <-- Added import
 
-# Load environment variables
+from src.config import Config
+from src.services.codeforces import CodeforcesService
+from src.services.analyzer import SubmissionAnalyzer
+
+# Setup Flask app
 load_dotenv()
-
-# Initialize Flask app
 app = Flask(__name__)
+app.config.from_object(Config)
 app.config['SECRET_KEY'] = os.urandom(24)
 
-# Configure Flask app
-class Config:
-    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-    CACHE_TYPE = 'SimpleCache'
-    CACHE_DEFAULT_TIMEOUT = 3600
-    RATELIMIT_DEFAULT = "30 per hour"
-    RATELIMIT_STORAGE_URL = "memory://"
-
-app.config.from_object(Config)
-
-# Initialize extensions
 cache = Cache(config={
     'CACHE_TYPE': Config.CACHE_TYPE,
     'CACHE_DEFAULT_TIMEOUT': Config.CACHE_DEFAULT_TIMEOUT
@@ -43,107 +30,6 @@ limiter = Limiter(
     default_limits=[Config.RATELIMIT_DEFAULT],
     storage_uri=Config.RATELIMIT_STORAGE_URL
 )
-
-# New: custom rate limit key to bypass limiter if header present
-def custom_rate_limit_key():
-    if request.headers.get("X-Bypass-RateLimit") == "true":
-        return str(random.randint(1, 1000000))
-    return get_remote_address()
-
-limiter.key_func = custom_rate_limit_key
-
-# Service classes
-class CodeforcesService:
-    @staticmethod
-    def get_user_data(username):
-        user_info = requests.get(f'https://codeforces.com/api/user.info?handles={username}').json()
-        submissions = requests.get(f'https://codeforces.com/api/user.status?handle={username}').json()
-        
-        if user_info['status'] != 'OK' or submissions['status'] != 'OK':
-            return None
-            
-        return {
-            'user_info': user_info['result'][0],
-            'submissions': submissions['result'][:3000]
-        }
-
-    @staticmethod
-    def get_difficulty_level(rating):
-        if rating < 1200:
-            return 'easy'
-        elif rating < 1900:
-            return 'medium'
-        else:
-            return 'hard'
-
-class SubmissionAnalyzer:
-    @staticmethod
-    def analyze_submissions(submissions):
-        topics = {}
-        for sub in submissions:
-            try:
-                if 'problem' in sub and 'tags' in sub['problem']:
-                    for tag in sub['problem']['tags']:
-                        if tag not in topics:
-                            topics[tag] = {'solved': 0, 'attempted': 0}
-                        if 'verdict' in sub and sub['verdict'] == 'OK':
-                            topics[tag]['solved'] += 1
-                        else:
-                            topics[tag]['attempted'] += 1
-            except Exception as e:
-                print(f"Error processing submission tags: {e}")
-                continue
-        
-        return topics
-
-    @staticmethod
-    def analyze_monthly_activity(submissions):
-        today = datetime.today()
-        start_date = today - timedelta(days=90)
-        
-        daily_counts = defaultdict(int)
-        filtered_submissions = [
-            sub for sub in submissions 
-            if datetime.fromtimestamp(sub['creationTimeSeconds']) >= start_date
-        ]
-        
-        for sub in filtered_submissions:
-            sub_date = datetime.fromtimestamp(sub['creationTimeSeconds'])
-            if 'verdict' in sub and sub['verdict'] == 'OK':
-                daily_counts[sub_date.strftime('%Y-%m-%d')] += 1
-        
-        dates = [(start_date + timedelta(days=x)).strftime('%Y-%m-%d') 
-                for x in range(91)]
-        values = [daily_counts.get(date, 0) for date in dates]
-        
-        return {
-            'labels': dates,
-            'values': values,
-            'total_solved': sum(values)
-        }
-
-    @staticmethod
-    def generate_recommendations(topics):
-        weak_topics = []
-        for topic, stats in topics.items():
-            if topic.lower() == 'special problems':
-                continue
-            success_rate = stats['solved'] / (stats['solved'] + stats['attempted']) if stats['solved'] + stats['attempted'] > 0 else 0
-            if success_rate < 0.5:
-                weak_topics.append((topic, success_rate))
-        
-        weak_topics.sort(key=lambda x: x[1])
-        recommendations = []
-        
-        if weak_topics:
-            recommendations.extend([
-                f"Focus on {topic} problems (current success rate: {rate*100:.1f}%)"
-                for topic, rate in weak_topics[:5]
-            ])
-        else:
-            recommendations.append("Great job! You're doing well across all topics.")
-        
-        return recommendations
 
 # Initialize services
 codeforces_service = CodeforcesService()
@@ -178,95 +64,6 @@ def security_headers(response):
     return response
 
 app.after_request(security_headers)
-
-def calculate_statistics(submissions):
-    today = datetime.today()
-    start_date = today - timedelta(days=90)
-    
-    # Filter submissions for the last 90 days
-    monthly_submissions = [
-        s for s in submissions 
-        if datetime.fromtimestamp(s['creationTimeSeconds']) >= start_date
-    ]
-    
-    # Count unique problem attempts and solved status
-    problem_attempts = defaultdict(lambda: {'attempts': 0, 'solved': False})
-    for sub in monthly_submissions:
-        if 'problem' not in sub:
-            continue
-        problem = sub['problem']
-        problem_id = f"{problem.get('contestId', 'unknown')}_{problem.get('index', 'unknown')}"
-        problem_attempts[problem_id]['attempts'] += 1
-        if 'verdict' in sub and sub['verdict'] == 'OK':
-            problem_attempts[problem_id]['solved'] = True
-
-    total_problems = len(problem_attempts)
-    solved_problems = len([p for p in problem_attempts.values() if p['solved']])
-    total_attempts = sum(p['attempts'] for p in problem_attempts.values())
-    avg_attempts = round(total_attempts / total_problems, 2) if total_problems else 0
-    success_rate = round((solved_problems / total_problems * 100), 1) if total_problems else 0
-
-    response = {
-        'total_solved': solved_problems,
-        'avg_attempts': avg_attempts,
-        'success_rate': success_rate,
-        'total_problems_attempted': total_problems,
-        'total_attempts': total_attempts
-    }
-
-    print(response)
-
-    return response
-
-def get_cp_resources(topic):
-    """Get competitive programming resources for a topic"""
-    resources = {
-        'implementation': [
-            ('USACO Guide - Bronze', 'https://usaco.guide/bronze/simulation'),
-            ('CSES Problem Set', 'https://cses.fi/problemset/list/'),
-            ('USACO Training Gateway', 'https://train.usaco.org/')
-        ],
-        'math': [
-            ('USACO Guide - Math Fundamentals', 'https://usaco.guide/bronze/math-cp'),
-            ('Project Euler', 'https://projecteuler.net/archives'),
-            ('IMO Training Materials', 'https://www.imo-official.org/problems.aspx')
-        ],
-        'dp': [
-            ('USACO Guide - Gold DP', 'https://usaco.guide/gold/dp-paths'),
-            ('AtCoder Educational DP', 'https://atcoder.jp/contests/dp'),
-            ('Errichto DP Guide', 'https://github.com/Errichto/youtube/wiki/DP-tutorial')
-        ],
-        'graphs': [
-            ('USACO Guide - Silver Graphs', 'https://usaco.guide/silver/graphs'),
-            ('CP Algorithms - Graphs', 'https://cp-algorithms.com/graph/breadth-first-search.html'),
-            ('Competitive Programming Handbook', 'https://cses.fi/book/book.pdf#page=119')
-        ],
-        'data structures': [
-            ('USACO Guide - Data Structures', 'https://usaco.guide/silver/binary-search'),
-            ('Competitive Programming Handbook', 'https://cses.fi/book/book.pdf#page=87'),
-            ('Algorithms for Competitive Programming', 'https://cp-algorithms.com/data_structures/segment_tree.html')
-        ],
-        'strings': [
-            ('USACO Guide - String Processing', 'https://usaco.guide/gold/string-fundamentals'),
-            ('CP Algorithms - Strings', 'https://cp-algorithms.com/string/string-hashing.html'),
-            ('HackerRank String Problems', 'https://www.hackerrank.com/domains/algorithms?filters%5Bsubdomains%5D%5B%5D=strings')
-        ],
-        'greedy': [
-            ('USACO Guide - Greedy Algorithms', 'https://usaco.guide/silver/greedy'),
-            ('Competitive Programming Handbook', 'https://cses.fi/book/book.pdf#page=63'),
-            ('Codeforces EDU - Greedy', 'https://codeforces.com/edu/course/2/lesson/2')
-        ]
-    }
-    
-    default_resources = [
-        ('USACO Training Gateway', 'https://train.usaco.org/'),
-        ('Competitive Programming Handbook', 'https://cses.fi/book/book.pdf'),
-        ('CP Algorithms', 'https://cp-algorithms.com/'),
-        ('CSES Problem Set', 'https://cses.fi/problemset/'),
-        ('Codeforces EDU', 'https://codeforces.com/edu/courses')
-    ]
-    
-    return resources.get(topic.lower(), default_resources)
 
 def get_problem_suggestions(topic, user_rating, count=3):
     try:
@@ -335,7 +132,7 @@ def generate_training_path(topics, user_rating):
     
     for topic, rate, difficulty in weighted_topics[:5]:
         suggested_problems = get_problem_suggestions(topic, user_rating)
-        cp_resources = get_cp_resources(topic)
+        cp_resources = CodeforcesService.get_cp_resources(topic)
         
         path.append({
             'topic': topic,
@@ -355,6 +152,7 @@ def generate_training_path(topics, user_rating):
     
     return path
 
+# Routes
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -389,7 +187,7 @@ def analyze():
         user_rating = cf_data['user_info'].get('rating', 0)
         topics = SubmissionAnalyzer.analyze_submissions(cf_data['submissions'])
         monthly_activity = SubmissionAnalyzer.analyze_monthly_activity(cf_data['submissions'])
-        statistics = calculate_statistics(cf_data['submissions'])
+        statistics = SubmissionAnalyzer.calculate_statistics(cf_data['submissions'])
         # NEW: catch gemini overload from training path generation
         try:
             training_path = generate_training_path(topics, user_rating)
@@ -410,8 +208,35 @@ def analyze():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+# Download analysis as JSON
+@app.route('/download', methods=['GET'])
+@limiter.limit("30 per hour")
+@cache.cached(timeout=3600) # Cache for 1 hour
+def download_analysis():
+    username = request.args.get('username')
+    if not username:
+        return jsonify({'error': 'Username query parameter is required'}), 400
+    cf = CodeforcesService.get_user_data(username)
+    if not cf:
+        return jsonify({'error': 'Invalid Codeforces username'}), 400
+    rating = cf['user_info'].get('rating', 0)
+    topics = SubmissionAnalyzer.analyze_submissions(cf['submissions'])
+    stats = SubmissionAnalyzer.calculate_statistics(cf['submissions'])
+    path = generate_training_path(topics, rating)
+    recs = SubmissionAnalyzer.generate_recommendations(topics)
+    result = {
+        'user_info': cf['user_info'],
+        'topics': topics,
+        'statistics': stats,
+        'training_path': path,
+        'recommendations': recs
+    }
+    response = make_response(jsonify(result))
+    response.headers['Content-Disposition'] = 'attachment; filename=analysis.json'
+    response.mimetype = 'application/json'
+    return response
 
-# Security headers middleware
 @app.after_request
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -421,6 +246,5 @@ def add_security_headers(response):
     response.headers['Permissions-Policy'] = 'geolocation=(), microphone=()'
     return response
 
-# Required for Vercel
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
