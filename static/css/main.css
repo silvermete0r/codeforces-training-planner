@@ -492,6 +492,50 @@ body {
 
 /* Mobile responsiveness */
 @media (max-width: 640px) {
+    .main-content {
+        padding: 1rem;
+    }
+
+    .logo-container {
+        width: 64px;
+        height: 64px;
+    }
+
+    .stats-card {
+        padding: 1rem;
+    }
+
+    .chart-container {
+        height: 250px;
+    }
+
+    .radar-container {
+        height: 400px;
+        display: none;
+    }
+
+    .roadmap-card {
+        padding: 1rem;
+    }
+
+    .step-number {
+        width: 2.5rem;
+        height: 2.5rem;
+        font-size: 1rem;
+    }
+
+    .user-badge {
+        font-size: 0.75rem;
+        padding: 0.375rem 0.75rem;
+    }
+
+    .problem-card, .resource-card {
+        padding: 0.75rem;
+    }
+}
+
+/* Mobile responsiveness */
+@media (max-width: 640px) {
     .max-w-6xl {
         padding: 0.5rem;
     }
@@ -515,49 +559,7 @@ body {
     
     .radar-container {
         height: 300px;
-    }
-}
-
-/* Mobile Responsiveness */
-@media (max-width: 640px) {
-    .main-content {
-        padding: 1rem;
-    }
-
-    .logo-container {
-        width: 64px;
-        height: 64px;
-    }
-
-    .stats-card {
-        padding: 1rem;
-    }
-
-    .chart-container {
-        height: 250px;
-    }
-
-    .radar-container {
-        height: 400px;
-    }
-
-    .roadmap-card {
-        padding: 1rem;
-    }
-
-    .step-number {
-        width: 2.5rem;
-        height: 2.5rem;
-        font-size: 1rem;
-    }
-
-    .user-badge {
-        font-size: 0.75rem;
-        padding: 0.375rem 0.75rem;
-    }
-
-    .problem-card, .resource-card {
-        padding: 0.75rem;
+        display: none;
     }
 }
 

@@ -124,9 +124,13 @@
                 <div class="stats-card rounded-xl p-6">
                     <h3 class="text-lg font-semibold mb-4">Topics Performance</h3>
                     <div class="flex flex-col gap-6">
-                        <!-- Radar Chart Container -->
-                        <div class="radar-container" style="height: 600px;">
+                        <!-- Radar Chart Container with mobile visibility control -->
+                        <div class="radar-container hidden md:block" style="height: 600px;">
                             <canvas id="topicsChart"></canvas>
+                        </div>
+                        <!-- Mobile Alternative Message -->
+                        <div class="block md:hidden text-center text-gray-600 p-4">
+                            Please view on a larger screen to see the detailed topics performance chart.
                         </div>
                         <!-- Recommendations Container -->
                         <div class="recommendations-container">

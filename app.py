@@ -10,6 +10,7 @@ from collections import defaultdict
 from functools import wraps
 import hashlib
 import time
+from app.config import Config
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -18,14 +19,6 @@ load_dotenv()
 # Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(24)
-
-# Configuration
-class Config:
-    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-    CACHE_TYPE = 'SimpleCache'
-    CACHE_DEFAULT_TIMEOUT = 3600
-    RATELIMIT_DEFAULT = "30 per hour"
-    RATELIMIT_STORAGE_URL = "memory://"
 
 app.config.from_object(Config)
 
@@ -77,7 +70,7 @@ class SubmissionAnalyzer:
                     for tag in sub['problem']['tags']:
                         if tag not in topics:
                             topics[tag] = {'solved': 0, 'attempted': 0}
-                        if sub['verdict'] == 'OK':
+                        if 'verdict' in sub and sub['verdict'] == 'OK':
                             topics[tag]['solved'] += 1
                         else:
                             topics[tag]['attempted'] += 1
@@ -100,7 +93,7 @@ class SubmissionAnalyzer:
         
         for sub in filtered_submissions:
             sub_date = datetime.fromtimestamp(sub['creationTimeSeconds'])
-            if sub['verdict'] == 'OK':
+            if 'verdict' in sub and sub['verdict'] == 'OK':
                 daily_counts[sub_date.strftime('%Y-%m-%d')] += 1
         
         dates = [(start_date + timedelta(days=x)).strftime('%Y-%m-%d') 
@@ -170,35 +163,6 @@ def security_headers(response):
 
 app.after_request(security_headers)
 
-def generate_roadmap(user_data, topics):
-    prompt = f"""
-    You are a seasoned programming mentor. Using the following user data:
-    
-    - Current Rating: {user_data.get('rating', 'Unrated')}
-    - Max Rating: {user_data.get('maxRating', 'N/A')}
-    
-    And the user's performance across various topics:
-    {topics}
-    
-    Generate a detailed, personalized study plan that will help the user improve their programming skills.
-    Your study plan should include:
-    1. A clear set of learning objectives.
-    2. A step-by-step roadmap with specific programming challenges and topics to focus on.
-    3. Recommended online resources (courses, tutorials, articles) for each step.
-    4. Practical tips to overcome common difficulties in competitive programming.
-    5. A motivational closing message to inspire continued improvement.
-    
-    Present your response with clear formatting, using numbered steps and bullet points where appropriate.
-    """
-    try:
-        response = model.generate_content(prompt)
-        final_response = response.text.strip()
-        print("Generated roadmap:", final_response)  # Debug output
-        return final_response
-    except Exception as e:
-        print(f"Error generating roadmap: {e}")
-        return "An error occurred while generating a personalized study plan. Please try again later."
-
 def calculate_statistics(submissions):
     today = datetime.today()
     start_date = today - timedelta(days=90)
@@ -217,7 +181,7 @@ def calculate_statistics(submissions):
         problem = sub['problem']
         problem_id = f"{problem.get('contestId', 'unknown')}_{problem.get('index', 'unknown')}"
         problem_attempts[problem_id]['attempts'] += 1
-        if sub['verdict'] == 'OK':
+        if 'verdict' in sub and sub['verdict'] == 'OK':
             problem_attempts[problem_id]['solved'] = True
 
     total_problems = len(problem_attempts)
@@ -343,7 +307,7 @@ def generate_training_path(topics, user_rating):
     
     weighted_topics = []
     for topic, stats in topics.items():
-        if topic.lower() == 'special problems':
+        if topic.lower() == '*special problems':
             continue
         success_rate = stats['solved'] / (stats['solved'] + stats['attempted']) if stats['solved'] + stats['attempted'] > 0 else 0
         topic_difficulty = topic_difficulties.get(topic.lower(), 3)
