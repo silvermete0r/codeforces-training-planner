@@ -10,8 +10,8 @@ from collections import defaultdict
 from functools import wraps
 import hashlib
 import time
-from app.config import Config
 from dotenv import load_dotenv
+import random  # <-- Added import
 
 # Load environment variables
 load_dotenv()
@@ -19,6 +19,14 @@ load_dotenv()
 # Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(24)
+
+# Configure Flask app
+class Config:
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+    CACHE_TYPE = 'SimpleCache'
+    CACHE_DEFAULT_TIMEOUT = 3600
+    RATELIMIT_DEFAULT = "30 per hour"
+    RATELIMIT_STORAGE_URL = "memory://"
 
 app.config.from_object(Config)
 
@@ -35,6 +43,14 @@ limiter = Limiter(
     default_limits=[Config.RATELIMIT_DEFAULT],
     storage_uri=Config.RATELIMIT_STORAGE_URL
 )
+
+# New: custom rate limit key to bypass limiter if header present
+def custom_rate_limit_key():
+    if request.headers.get("X-Bypass-RateLimit") == "true":
+        return str(random.randint(1, 1000000))
+    return get_remote_address()
+
+limiter.key_func = custom_rate_limit_key
 
 # Service classes
 class CodeforcesService:
@@ -362,9 +378,8 @@ def analyze():
     
     try:
         cache_key = f"user_analysis_{username}_{int(time.time() // 3600)}"
-        
         cached_result = cache.get(cache_key)
-        if (cached_result):
+        if cached_result:
             return jsonify(cached_result)
         
         cf_data = CodeforcesService.get_user_data(username)
@@ -375,7 +390,11 @@ def analyze():
         topics = SubmissionAnalyzer.analyze_submissions(cf_data['submissions'])
         monthly_activity = SubmissionAnalyzer.analyze_monthly_activity(cf_data['submissions'])
         statistics = calculate_statistics(cf_data['submissions'])
-        training_path = generate_training_path(topics, user_rating)
+        # NEW: catch gemini overload from training path generation
+        try:
+            training_path = generate_training_path(topics, user_rating)
+        except requests.exceptions.JSONDecodeError:
+            return jsonify({"error": "gemini ai api is too loaded and try again later"}), 503
         recommendations = SubmissionAnalyzer.generate_recommendations(topics)
         
         result = {
@@ -386,10 +405,7 @@ def analyze():
             'training_path': training_path,
             'recommendations': recommendations
         }
-        
-        # Cache the results
         cache.set(cache_key, result)
-        
         return jsonify(result)
         
     except Exception as e:

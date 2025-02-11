@@ -1,0 +1,6 @@
+pytest==7.4.4
+pytest-html==4.1.1
+pytest-cov==4.1.0
+selenium==4.16.0
+requests==2.31.0
+webdriver-manager==4.0.1
